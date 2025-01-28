@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Resolución Espacial en Imágenes Satelitales</title>
+    <!-- Tailwind CSS desde CDN -->
+    <link
+      href="https://unpkg.com/tailwindcss@3.2.7/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <!-- React, ReactDOM y Framer Motion en modo UMD (sin Node ni build tools) -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/framer-motion@10.12.16/dist/framer-motion.umd.js" crossorigin></script>
+    <!-- Babel para compilar nuestro JSX inline -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+
+  <body class="bg-gray-100">
+    <!-- Contenedor donde se montará la app de React -->
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+      const { motion } = framerMotion;
+
+      // Imagen de respaldo por defecto
+      const defaultForestImage =
+        'https://images.unsplash.com/photo-1594870532747-c76767b07630?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80';
+
+      function InfografiaResolucionEspacial() {
+        // 1) immediatePixelSize: valor del slider en tiempo real
+        // 2) debouncedPixelSize: valor que se actualiza con retardo (para evitar lentitud)
+        const [immediatePixelSize, setImmediatePixelSize] = useState(15);
+        const [debouncedPixelSize, setDebouncedPixelSize] = useState(15);
+
+        // Imagen base y la imagen final (pixelada)
+        const [backgroundSrc, setBackgroundSrc] = useState(defaultForestImage);
+        const [displayedImage, setDisplayedImage] = useState(defaultForestImage);
+
+        // Dimensiones de la zona de visualización
+        const width = 300;
+        const height = 300;
+
+        // Debounce: al mover el slider, esperamos 200 ms antes de recalcular la pixelación
+        useEffect(() => {
+          const timerId = setTimeout(() => {
+            setDebouncedPixelSize(immediatePixelSize);
+          }, 200);
+          return () => clearTimeout(timerId);
+        }, [immediatePixelSize]);
+
+        // Manejador para cargar una imagen local
+        function handleFileChange(event) {
+          const file = event.target.files?.[0];
+          if (file) {
+            const localUrl = URL.createObjectURL(file);
+            setBackgroundSrc(localUrl);
+          }
+        }
+
+        // Liberar la URL local cuando ya no se use
+        useEffect(() => {
+          return () => {
+            if (backgroundSrc && backgroundSrc !== defaultForestImage) {
+              URL.revokeObjectURL(backgroundSrc);
+            }
+          };
+        }, [backgroundSrc]);
+
+        // Pixelado de la imagen al cambiar debouncedPixelSize o backgroundSrc
+        useEffect(() => {
+          if (!backgroundSrc) {
+            return;
+          }
+
+          const columns = Math.floor(width / debouncedPixelSize);
+          const rows = Math.floor(height / debouncedPixelSize);
+
+          // Si columnas o filas son 0, no pixelamos
+          if (columns < 1 || rows < 1) {
+            setDisplayedImage(backgroundSrc);
+            return;
+          }
+
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = backgroundSrc;
+
+          img.onload = () => {
+            // Canvas intermedio para reducir la imagen
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = columns;
+            offCanvas.height = rows;
+            const ctx = offCanvas.getContext('2d');
+            if (ctx) {
+              ctx.imageSmoothingEnabled = false;
+              ctx.drawImage(img, 0, 0, columns, rows);
+            }
+
+            // Canvas final para ampliar la imagen reducida, forzando el efecto 'pixelado'
+            const scaledCanvas = document.createElement('canvas');
+            scaledCanvas.width = width;
+            scaledCanvas.height = height;
+            const scaledCtx = scaledCanvas.getContext('2d');
+            if (scaledCtx) {
+              scaledCtx.imageSmoothingEnabled = false;
+              scaledCtx.drawImage(offCanvas, 0, 0, width, height);
+              const dataUrl = scaledCanvas.toDataURL('image/png');
+              setDisplayedImage(dataUrl);
+            } else {
+              setDisplayedImage(backgroundSrc);
+            }
+          };
+
+          img.onerror = () => {
+            setDisplayedImage(backgroundSrc);
+          };
+        }, [debouncedPixelSize, backgroundSrc]);
+
+        return (
+          <div className="w-full min-h-screen flex flex-col items-center p-4">
+            <h1 className="text-2xl font-bold mb-4 text-center">
+              Resolución Espacial en Imágenes Satelitales
+            </h1>
+            <p className="max-w-3xl text-center mb-4">
+              La <strong>resolución espacial</strong> se refiere al tamaño del píxel en la
+              superficie terrestre que captura cada sensor satelital. Un píxel grande
+              significa menor detalle (baja resolución) y uno pequeño implica mayor
+              detalle (alta resolución). Arrastra el control para observar cómo varía la
+              apariencia de la imagen simulada con diferente resolución.
+            </p>
+
+            {/* Panel con el slider y opción de subir archivo */}
+            <div className="p-4 mb-4 shadow-2xl bg-white rounded-2xl w-full max-w-xl">
+              <div className="flex flex-col space-y-4 items-center">
+                <label className="text-sm font-semibold text-gray-700">
+                  Tamaño de píxel simulado: {immediatePixelSize}px
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="50"
+                  value={immediatePixelSize}
+                  onChange={(e) => setImmediatePixelSize(Number(e.target.value))}
+                  className="w-64"
+                />
+
+                <label className="text-sm font-semibold text-gray-700 mt-4">
+                  Cargar imagen local:
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-gray-900 file:mr-4 file:py-2 file:px-4
+                    file:rounded-lg file:border-0 file:text-sm file:font-semibold
+                    file:bg-green-50 file:text-green-700
+                    hover:file:bg-green-100
+                  "
+                />
+              </div>
+            </div>
+
+            {/* Contenedor con dos imágenes: la original y la pixelada */}
+            <div className="flex flex-row items-center justify-center space-x-4">
+              {/* Imagen original */}
+              <div
+                className="bg-gray-300 w-[300px] h-[300px]"
+                style={{
+                  backgroundImage: `url(${backgroundSrc})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                }}
+              ></div>
+
+              {/* Imagen pixelada */}
+              <div
+                className="bg-gray-300 w-[300px] h-[300px]"
+                style={{
+                  backgroundImage: `url(${displayedImage})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                }}
+              ></div>
+            </div>
+
+            <div className="mt-4 max-w-3xl text-center text-sm">
+              <p>
+                <strong>¿Qué consecuencias tiene escoger una u otra resolución?</strong> A mayor
+                resolución espacial, se pueden distinguir más detalles en la superficie
+                (ej. tipos de vegetación, caminos, edificios), lo que puede ser crucial
+                para la gestión forestal y la conservación de recursos. Sin embargo, la
+                alta resolución suele implicar archivos más grandes, mayor costo y mayor
+                tiempo de procesamiento. Por el contrario, una resolución más gruesa
+                (píxeles grandes) reduce el detalle pero ahorra costes y tiempo, siendo
+                útil para estudios de gran escala o monitoreo global.
+              </p>
+            </div>
+          </div>
+        );
+      }
+
+      // Renderizamos la app en #root
+      ReactDOM.render(
+        <InfografiaResolucionEspacial />,
+        document.getElementById('root')
+      );
+    </script>
+  </body>
+</html>
